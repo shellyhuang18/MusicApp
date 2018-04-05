@@ -1,60 +1,90 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using Utility;
+using UnityEngine.UI;
+
 [RequireComponent(typeof(AudioSource))]
 public class PitchDetector : MonoBehaviour {
 	AudioSource microphone;
-	public int samplerate = 11024;
 	public string[] letterNoteArray =  {"A","A#","B","C","C#","D","D#","E","F","F#","G","G#"};
-	// Use this for initialization
-	void Start () {
-		Debug.Log ("Started");
+	private const int samples = 1024;
+	private float SampleRate;
+	private Pitch.Yin yin;
+	private Pitch.PitchTracker ptracker;
+	public string Note = "";
+	public float MidiNote = 0;
+	public float pitch = 0.0f;
+	public string algorithm = "";
+	void Start()
+	{
+		SampleRate = AudioSettings.outputSampleRate;
 		microphone = GetComponent<AudioSource>();
 		microphone.clip = Microphone.Start ("Built-in Microphone", true, 10, 44100);
 		microphone.loop = true;
 		while (!(Microphone.GetPosition (null) > 0)) {
 		}
 		microphone.Play();
-		//Debug.Log (microphone.clip.frequency + " ");
-		//float[] spectrum;
-		//spectrum = microphone.GetOutputData ();
-		//Debug.Log (microphone.pitch + " ");
-		
+		algorithm = "Yin";
+		if (algorithm == "Yin") {
+			// Yin algorithm
+			yin = new Pitch.Yin (SampleRate, samples);
+		} else {
+			// AutoCorrelation
+			ptracker = new Pitch.PitchTracker ();
+			ptracker.PitchDetected += ptracker_PitchDetected;
+			ptracker.SampleRate = samples;
+		}
+
+
 	}
-	
-	// Update is called once per frame
-	void Update () {
-		//Debug.Log (microphone.clip.frequency + " ");
-		//Debug.Log (GetFundamentalFrequency() + " ");
-		Debug.Log ("The pitch is " + Utility.Pitch.getNearestPitch(GetFundamentalFrequency()) + " ");
-		Debug.Log ("The frequency is " + GetFundamentalFrequency() + " ");
+		
+	void Update()
+	{
+		float[] floatBuffer = new float[samples];
+		microphone.GetOutputData(floatBuffer,0);
+		if (algorithm == "Yin") {
+			Debug.Log ("The Yin Algorithm frequency   " + yin.getPitch(floatBuffer).getPitch());
+			Debug.Log ("The Note is " + getPitch (yin.getPitch (floatBuffer).getPitch ()));
+		} else {
+			ptracker.ProcessBuffer (floatBuffer);
+		}
 	}
 
-	/*float GetFundamentalFrequency()
+	void ptracker_PitchDetected (Pitch.PitchTracker sender, Pitch.PitchTracker.PitchRecord pitchRecord)
 	{
-		float fundamentalFrequency = 0.0f;
-		float[] data = new float[8192];
-		microphone.GetSpectrumData(data,0,FFTWindow.BlackmanHarris);
-		return fundamentalFrequency;
-	}*/
-	float GetFundamentalFrequency()
-	{
-		float fundamentalFrequency = 0.0f;
-		float[] data = new float[8192];
-		microphone.GetSpectrumData(data,0,FFTWindow.BlackmanHarris);
-		float s = 0.0f;
-		int i = 0;
-		for (int j = 1; j < 8192; j++)
-		{
-			if ( s < data[j] )
-			{
-				s = data[j];
-				i = j;
-			}
-		}
-		fundamentalFrequency = i * samplerate / 8192;
-		return fundamentalFrequency;
+		setNumbers (pitchRecord.Pitch);
+
 	}
+
+	private void setNumbers(float pitchz){
+		if (pitch < 0)
+			pitch = 0;
+		Debug.Log ("AutoCorrellation is " + pitch);
+		pitch = pitchz;
+		MidiNote = Pitch.PitchDsp.PitchToMidiNote (pitch);
+		Note = Pitch.PitchDsp.GetNoteName((int)MidiNote, true, true);
+	}
+		
+
+	public string getPitch(float pitchInHz) {
+		// Base Note is A4 = 440
+		float baseNote = 440;
+		// octaves from base -> octaves  =  log(base2)(freq/base).
+		double octavesFromBase = Mathf.Round(Mathf.Log(pitchInHz/baseNote, 2));
+		// half steps = log2^12 (freq/base)
+		// half steps from base -> half steps  =  12 * log(base2)(freq/base).
+		double halfStepsFromBase = Mathf.Round (12 * Mathf.Log(pitchInHz/baseNote, 2));
+		int letterNoteIndex = ((int) halfStepsFromBase % 12);
+		if (letterNoteIndex < 0)
+			letterNoteIndex += 12;
+		int numberNote;
+		if (halfStepsFromBase < 3) {
+			numberNote = (int)halfStepsFromBase / 12 + 4;
+		} else {
+			numberNote = (int)halfStepsFromBase / 12 + 5;
+		}
+		return letterNoteArray[letterNoteIndex] + numberNote;
+	}
+		
 
 }
